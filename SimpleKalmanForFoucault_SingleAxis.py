@@ -11,7 +11,7 @@ import numpy as np
 import sympy as sp
 import scipy as sc
 import scipy.linalg as sla
-
+import control as ctl
 
 mu = 0.1             # Pixel size
 nSamps = 1000        # number of samples
@@ -142,9 +142,6 @@ class FoucaultKalman():
             Pk1k1 = Pkk # for next step
         outputEstimate = self.Hk @ stateEstimate
         return (stateEstimate, outputEstimate)
-        
-
-    
     
         
 kalman = FoucaultKalman(pendulumM, Qk, Rk)       
@@ -211,3 +208,50 @@ plt.legend(loc="upper right")
 plt.grid('on')
         
         
+
+
+# Try with Luenberg observer
+class Luenberger():
+    def __init__(self, model, poles):
+        self.A = np.asarray(model[0]) # state transition matrix (i.e. A)
+        self.B = np.asarray(model[1]) # control input matrix (i.e. B)
+        self.C = np.asarray(model[2]) # measurement model matrix (i.e. C)
+        self.nState = self.A.shape[0]
+        self.nIn = self.B.shape[1]
+        self.nOut = self.C.shape[0]
+        self.poles = poles
+        self.L = ctl.place(self.A.transpose(), self.C.transpose(), self.poles).transpose()
+        self.L = self.L.A # stupid matrix thing
+    
+    def propagate(self, controlValues, measurementValues, measurementValuesAvailable):
+        measurementValues = np.asarray(measurementValues)
+        controlValues = np.asarray(controlValues)
+        N = measurementValues.shape[1]
+        stateEstimate = np.zeros((self.nState, N))
+        for k in range(0, N-1):
+            uk = controlValues[:,k]
+            yk = measurementValues[:,k]
+            xk = stateEstimate[:,k]
+            if (measurementValuesAvailable[k]):
+                xkPlus1 = self.A @ xk + self.B @ uk + (self.L @ (yk - self.C @ xk))
+            else:
+                xkPlus1 = self.A @ xk + self.B @ uk
+            stateEstimate[:,k+1] = xkPlus1
+        outputEstimate = self.C @ stateEstimate
+        return (stateEstimate, outputEstimate)  
+    
+measurementValuesAvailable = np.full((nSamps), True)
+
+poles = 0.5**(1/50) * np.asarray([1, 0.9, 0.8])
+luen = Luenberger(pendulum, poles) # use actual system (not pendulumM)
+
+(stateEstimate, outputEstimate) = luen.propagate(inputVal, pendulumMeasurement, measurementValuesAvailable)
+
+plt.figure()   
+plt.title('Luenberg observer')   
+plt.plot(pendulumMeasurement.transpose(),'.', label='measurement') 
+plt.plot(outputEstimate.transpose(),  label='output estimate')  
+
+plt.plot(pendulumMeasurement.transpose() - outputEstimate.transpose(),'--',  label='estimate error')  
+plt.legend(loc="upper right")
+plt.grid('on')
